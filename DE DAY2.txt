@@ -1,0 +1,407 @@
+FACT Table & DIM Table are in OLAP Layer
+this is called 3rd Normalised form
+
+
+Think of columnar storage as storing each column’s values together, instead of storing an entire row together.
+
+Suppose you have this Snowflake table:
+
+ID	Name	City	Salary
+1	MK	Chennai	50000
+2	AK	Bangalore	60000
+3	SK	Chennai	55000
+Row-based storage
+
+A traditional row-oriented database might conceptually store it like:
+
+1, MK, Chennai, 50000
+2, AK, Bangalore, 60000
+3, SK, Chennai, 55000
+
+So each row's values are kept together.
+
+Snowflake's columnar storage
+Snowflake stores data by columns, conceptually like:
+
+COLUMN 1 → ID     → 1, 2, 3
+COLUMN 2 → Name   → MK, AK, SK
+COLUMN 3 → City   → Chennai, Bangalore, Chennai
+COLUMN 4 → Salary → 50000, 60000, 55000
+
+That's columnar storage.
+
+Compare with row-based
+Row-based would be:
+Row 1 → 1, MK, Chennai, 50000
+Row 2 → 2, AK, Bangalore, 60000
+Row 3 → 3, SK, Chennai, 55000
+
+
+Row-based storage:
+
+→ → → →  Row 1
+→ → → →  Row 2
+→ → → →  Row 3
+
+Columnar storage:
+
+↓       ↓       ↓          ↓
+ID     Name    City       Salary
+↓       ↓       ↓          ↓
+1       MK    Chennai     50000
+2       AK    Bangalore   60000
+3       SK    Chennai     55000
+
+So the key is:
+
+Row-based = values of one row are kept together.
+
+Columnar = values of one column are kept together.
+
+Another important advantage: compression
+Columns usually contain similar types of data.
+
+For example:
+
+City
+---------
+Chennai
+Chennai
+Chennai
+Bangalore
+Chennai
+Bangalore
+
+Because values repeat, columnar storage can compress this data very effectively.
+
+Similarly:
+
+Salary
+------
+50000
+51000
+50000
+50000
+51000
+
+has a lot of repetition/patterns that compression can exploit.
+
+How Snowflake actually organizes it Snowflake stores table data in micro-partitions.
+
+Conceptually:
+
+EMPLOYEES TABLE
+       ↓
+┌─────────────────────────┐
+│     Micro-partition 1   │
+│ ID | Name | City | Salary│
+└─────────────────────────┘
+┌─────────────────────────┐
+│     Micro-partition 2   │
+│ ID | Name | City | Salary│
+└─────────────────────────┘
+          ↓
+   Columnar storage
+          ↓
+   Compression + metadata
+
+Each micro-partition contains the table's columns, and Snowflake maintains metadata about the data inside those micro-partitions.
+
+So when you run:
+
+SELECT *
+FROM employees
+WHERE City = 'Chennai';
+
+Snowflake can use micro-partition metadata to determine which micro-partitions may contain Chennai, and then read the needed data.
+
+Simple way to remember:
+
+Row storage: "Give me the whole customer record."
+Columnar storage: "Give me the values for this particular column."
+
+That's one of the major reasons Snowflake is well suited for OLAP/analytics workloads.
+
+
+Micro-partition = roughly 50–500 MB of uncompressed table data, automatically created by Snowflake.
+
+2. What is a cluster?
+For a Snowflake virtual warehouse, think:
+
+        Virtual Warehouse
+              │
+       ┌──────┴──────┐
+       │             │
+     Node          Node
+       │             │
+   CPU + Memory   CPU + Memory
+
+A warehouse provides the compute resources that execute your SQL.
+
+For example:
+
+CREATE WAREHOUSE my_wh
+WAREHOUSE_SIZE = 'X-SMALL';
+
+When you run:
+
+SELECT *
+FROM employees;
+
+the warehouse provides the computing power to execute that query.
+
+
+3. What is a node?
+
+A node is basically a compute machine/server that provides resources such as:
+
+CPU
+Memory
+Processing resources
+
+Conceptually:
+
+Virtual Warehouse
+       │
+       ├── Node 1
+       │    ├── CPU
+       │    └── Memory
+       │
+       ├── Node 2
+       │    ├── CPU
+       │    └── Memory
+       │
+       └── Node 3
+            ├── CPU
+            └── Memory
+
+You normally don't manage individual nodes directly in Snowflake.
+
+You choose the warehouse size, and Snowflake manages the underlying compute infrastructure.
+
+                    SNOWFLAKE
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+       STORAGE                    COMPUTE
+          │                         │
+     Micro-partitions           Warehouse
+          │                         │
+    ┌─────┼─────┐             Compute Cluster
+    ↓     ↓     ↓                    │
+   MP1   MP2   MP3                Nodes
+    │     │     │                    │
+    └─────┴─────┘                  CPU
+                                   Memory
+
+
+----Storage side
+Table
+  ↓
+Micro-partitions
+  ↓
+Columnar data
+  ↓
+Compressed
+
+---Compute side
+SQL query
+   ↓
+Warehouse
+   ↓
+Compute cluster
+   ↓
+Nodes
+   ↓
+CPU + Memory
+   ↓
+Process query
+
+
+3-layer Snowflake architecture you learned:
+
+                 SNOWFLAKE
+                    │
+       ┌────────────┼────────────┐
+       │            │            │
+   Cloud Services   Storage    Compute
+      Layer          Layer      Layer
+                                  │
+                         Query Processing
+Where do cluster and node belong?
+
+Cluster and nodes belong to the Compute / Query Processing Layer.
+
+3-Layer Architecture
+│
+├── 1. Cloud Services Layer
+│      └── Authentication
+│      └── Metadata
+│      └── Query parsing/optimization
+│
+├── 2. Database Storage Layer
+│      └── Tables
+│      └── Micro-partitions
+│      └── Columnar storage
+│
+└── 3. Query Processing / Compute Layer
+       └── Virtual Warehouse
+              └── Compute Cluster
+                     └── Nodes
+                            ├── CPU
+                            └── Memory
+
+So your understanding can be:
+
+| Concept            | Layer                                |
+| ------------------ | ------------------------------------ |
+| Cloud Services     | **Cloud Services Layer**             |
+| Metadata           | **Cloud Services Layer**             |
+| Query optimization | **Cloud Services Layer**             |
+| Tables             | **Storage Layer**                    |
+| Micro-partitions   | **Storage Layer**                    |
+| Columnar storage   | **Storage Layer**                    |
+| Virtual Warehouse  | **Compute / Query Processing Layer** |
+| Compute Cluster    | **Compute / Query Processing Layer** |
+| Nodes              | **Compute / Query Processing Layer** |
+
+Don't think "query processing" is a fourth layer.
+
+In the 3-layer model, it is usually called the:
+
+Compute Layer / Query Processing Layer
+
+So:
+
+Cloud Services → Storage → Compute (Query Processing)
+
+That's the architecture you should remember for your Snowflake learning.
+
+
+Data Modeeling Tecnique
+Star Schema
+Snowflake Schema -
+
+
+In Snowflake, a cluster key tells Snowflake which column(s) to use for organizing micro-partitions so that queries filtering on those columns can potentially scan less data.
+
+Simple example
+
+Suppose you have a large sales fact table:
+CREATE TABLE FACT_SALES (
+    SALE_ID       NUMBER,
+    CUSTOMER_ID   NUMBER,
+    SALE_DATE     DATE,
+    PRODUCT_ID    NUMBER,
+    SALES_AMOUNT  NUMBER
+);
+
+Suppose your queries frequently do this:
+SELECT *
+FROM FACT_SALES
+WHERE SALE_DATE BETWEEN '2026-01-01' AND '2026-01-31';
+
+You can create one cluster key on SALE_DATE:
+ALTER TABLE FACT_SALES
+CLUSTER BY (SALE_DATE);
+
+That's it.
+
+How to check it
+SHOW TABLES LIKE 'FACT_SALES';
+
+You can also use:
+SELECT SYSTEM$CLUSTERING_INFORMATION('FACT_SALES');
+
+Important distinction
+
+A cluster key is not an index.
+
+In Snowflake:
+Traditional database
+       ↓
+Index
+       ↓
+Find rows quickly
+
+Snowflake
+       ↓
+Micro-partitions
+       ↓
+Clustering key
+       ↓
+Better micro-partition pruning
+
+
+For example, if your table has millions/billions of rows and SALE_DATE is commonly used in your WHERE conditions, clustering on SALE_DATE can help Snowflake avoid scanning irrelevant micro-partitions.
+
+
+If you mean "one cluster key" literally
+
+Use:
+
+ALTER TABLE FACT_SALES
+CLUSTER BY (SALE_DATE);
+
+
+ALTER TABLE FACT_SALES
+CLUSTER BY (SALE_DATE, CUSTOMER_ID);
+
+
+But don't automatically add multiple columns. Choose clustering based on your actual query patterns and table size. Clustering has a maintenance cost, so it's generally more relevant for large tables where pruning benefits justify that cost.
+
+
+1. What is a sequence?
+
+A sequence generates unique numeric values automatically.
+
+For example:
+
+1001
+1002
+1003
+1004
+1005
+...
+
+
+2. Create a sequence
+
+In Snowflake:
+
+CREATE SEQUENCE customer_seq
+START WITH 1
+INCREMENT BY 1;
+
+
+This means:
+
+customer_seq → sequence name
+START WITH 1 → first value starts from 1
+INCREMENT BY 1 → increase by 1 each time
+
+
+3. Use the sequence
+
+You get the next number using:
+SELECT customer_seq.NEXTVAL;
+
+
+In Snowflake, use AUTOINCREMENT (also called IDENTITY).
+
+Example
+CREATE TABLE CUSTOMER (
+    CUSTOMER_ID NUMBER AUTOINCREMENT,
+    CUSTOMER_NAME VARCHAR,
+    CITY VARCHAR
+);
+
+
+Now insert data without providing CUSTOMER_ID:
+INSERT INTO CUSTOMER (CUSTOMER_NAME, CITY)
+VALUES ('Murali', 'Chennai');
+
+INSERT INTO CUSTOMER (CUSTOMER_NAME, CITY)
+VALUES ('SAI', 'Bangalore');
+
+select * from customer;
